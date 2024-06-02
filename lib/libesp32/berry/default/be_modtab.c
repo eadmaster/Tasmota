@@ -6,6 +6,7 @@
 ** https://github.com/Skiars/berry/blob/master/LICENSE
 ********************************************************************/
 #include "berry.h"
+#include "../../berry_custom/src/modules.h"
 
 /* this file contains the declaration of the module table. */
 
@@ -75,7 +76,7 @@ be_extern_native_module(matter);
 /* user-defined modules declare end */
 
 /* module list declaration */
-BERRY_LOCAL const bntvmodule* const be_module_table[] = {
+BERRY_LOCAL const bntvmodule_t* const be_module_table[] = {
 /* default modules register */
 #if BE_USE_STRING_MODULE
     &be_native_module(string),
@@ -146,7 +147,10 @@ BERRY_LOCAL const bntvmodule* const be_module_table[] = {
 #ifdef USE_UNISHOX_COMPRESSION
     &be_native_module(unishox),
 #endif // USE_UNISHOX_COMPRESSION
+
+#ifdef USE_WS2812
     &be_native_module(animate),
+#endif // USE_WS2812
 
 #ifdef USE_LVGL
     &be_native_module(lv),
@@ -186,6 +190,7 @@ BERRY_LOCAL const bntvmodule* const be_module_table[] = {
     &be_native_module(matter),
 #endif // USE_MATTER_DEVICE
 #endif // TASMOTA
+    CUSTOM_NATIVE_MODULES
     /* user-defined modules register end */
     NULL /* do not remove */
 };
@@ -207,8 +212,6 @@ be_extern_native_class(AXP202);
 be_extern_native_class(OneWire);
 be_extern_native_class(Leds_ntv);
 be_extern_native_class(Leds);
-be_extern_native_class(Leds_animator);
-be_extern_native_class(AudioOutput);
 be_extern_native_class(AudioGenerator);
 be_extern_native_class(AudioFileSource);
 be_extern_native_class(AudioOutputI2S);
@@ -216,10 +219,12 @@ be_extern_native_class(AudioGeneratorWAV);
 be_extern_native_class(AudioGeneratorMP3);
 be_extern_native_class(AudioFileSourceFS);
 be_extern_native_class(AudioOpusDecoder);
+be_extern_native_class(AudioInputI2S);
 be_extern_native_class(md5);
 be_extern_native_class(udp);
 be_extern_native_class(webclient);
 be_extern_native_class(tcpclient);
+be_extern_native_class(tcpclientasync);
 be_extern_native_class(tcpserver);
 be_extern_native_class(energy_struct);
 // LVGL core classes
@@ -267,6 +272,7 @@ BERRY_LOCAL bclass_array be_class_table = {
     &be_native_class(udp),
     &be_native_class(webclient),
     &be_native_class(tcpclient),
+    &be_native_class(tcpclientasync),
 #endif // USE_WEBCLIENT
 #ifdef USE_BERRY_TCPSERVER
     &be_native_class(tcpserver),
@@ -274,7 +280,6 @@ BERRY_LOCAL bclass_array be_class_table = {
 #ifdef USE_WS2812
     &be_native_class(Leds_ntv),
     &be_native_class(Leds),
-    &be_native_class(Leds_animator),
 #endif // USE_WS2812
 #ifdef USE_ENERGY_SENSOR
     &be_native_class(energy_struct),
@@ -293,8 +298,7 @@ BERRY_LOCAL bclass_array be_class_table = {
     &be_native_class(lv_clock_icon),
 #endif // USE_LVGL
 
-#ifdef USE_I2S_AUDIO_BERRY
-    &be_native_class(AudioOutput),
+#if defined(USE_I2S_AUDIO_BERRY) && (ESP_IDF_VERSION_MAJOR >= 5)
     &be_native_class(AudioGenerator),
     &be_native_class(AudioFileSource),
     &be_native_class(AudioOutputI2S),
@@ -304,11 +308,14 @@ BERRY_LOCAL bclass_array be_class_table = {
     &be_native_class(AudioFileSourceFS),
 #endif // USE_UFILESYS
     &be_native_class(AudioOpusDecoder),
-#endif // USE_I2S_AUDIO_BERRY
+    &be_native_class(AudioInputI2S),
+#endif // defined(USE_I2S_AUDIO_BERRY) && (ESP_IDF_VERSION_MAJOR >= 5)
+#endif // TASMOTA
+
 #if defined(USE_BERRY_INT64) || defined(USE_MATTER_DEVICE)
     &be_native_class(int64),
 #endif
-#endif // TASMOTA
+    CUSTOM_NATIVE_CLASSES
     NULL, /* do not remove */
 };
 

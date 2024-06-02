@@ -215,7 +215,7 @@ bool TmAddKey(void) {
 bool Xdrv66(uint32_t function) {
   bool result = false;
 
-  if (FUNC_MODULE_INIT == function) {
+  if (FUNC_SETUP_RING2 == function) {
     TmInit();
   } else if (Tm1638.detected) {
     switch (function) {
@@ -231,6 +231,9 @@ bool Xdrv66(uint32_t function) {
       case FUNC_ADD_SWITCH:
 #endif
         result = TmAddKey();
+        break;
+      case FUNC_ACTIVE:
+        result = true;
         break;
     }
   }

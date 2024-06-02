@@ -25,6 +25,7 @@
  *
  * Supported template fields:
  * NAME  - Template name
+ * BASE  - Optional. 0 = use relative buttons and switches (default), 1 = use absolute buttons and switches
  * GPIO  - Sequential list of pin 1 and up with configured GPIO function
  *         Function             Code      Description
  *         -------------------  --------  ----------------------------------------
@@ -35,8 +36,8 @@
  *         Button_in1..32  Bin  128..159  Button inverted to Vcc without internal pullup
  *         Switch1..28     S    160..187  Switch to Gnd with internal pullup
  *         Switch_n1..28   Sn   192..219  Switch to Gnd without internal pullup
- *         Relay1..28      R    224..255  Relay
- *         Relay_i1..28    Ri   256..287  Relay inverted
+ *         Relay1..32      R    224..255  Relay
+ *         Relay_i1..32    Ri   256..287  Relay inverted
  *         Output_Hi       Oh   3840      Fixed output high
  *         Output_lo       Ol   3872      Fixed output low
  *
@@ -135,7 +136,7 @@ typedef struct {
   uint8_t olatb;
   uint8_t address;
   uint8_t interface;
-  uint8_t pins;                                        // 8 (MCP23008) or 16 (MCP23017 / MCP23S17)
+  uint8_t pins;                                        // 8 (MCP23x08) or 16 (MCP23x17)
   int8_t pin_cs;
   int8_t pin_int;
 } tMcp23xDevice;
@@ -153,6 +154,7 @@ struct MCP230 {
   uint8_t switch_max;
   int8_t button_offset;
   int8_t switch_offset;
+  bool base;
   bool interrupt;
 } Mcp23x;
 
@@ -310,7 +312,7 @@ void MCP23xUpdate(uint8_t pin, bool pin_value, uint8_t reg_addr) {
 /*********************************************************************************************/
 
 uint32_t MCP23xSetChip(uint8_t pin) {
-  // Calculate chip based on number of pins per chip. 8 for MCP23008, 16 for MCP23x17
+  // Calculate chip based on number of pins per chip. 8 for MCP23x08, 16 for MCP23x17
   // pin 0 - 63
   for (Mcp23x.chip = 0; Mcp23x.chip < Mcp23x.max_devices; Mcp23x.chip++) {
     if (Mcp23x.device[Mcp23x.chip].pins > pin) { break; }
@@ -485,9 +487,13 @@ bool MCP23xLoadTemplate(void) {
 
   // {"NAME":"MCP23017","GPIO":[32,33,34,35,36,37,38,39,224,225,226,227,228,229,230,231]}
   // {"NAME":"MCP23017","GPIO":[32,33,34,35,36,37,38,39,224,225,226,227,228,229,230,231,40,41,42,43,44,45,46,47,232,233,234,235,236,237,238,239]}
-  JsonParserToken val = root[PSTR(D_JSON_NAME)];
+  JsonParserToken val = root[PSTR(D_JSON_BASE)];
   if (val) {
-    AddLog(LOG_LEVEL_DEBUG, PSTR("MCP: Template %s"), val.getStr());
+    Mcp23x.base = (val.getUInt()) ? true : false;
+  }
+  val = root[PSTR(D_JSON_NAME)];
+  if (val) {
+    AddLog(LOG_LEVEL_DEBUG, PSTR("MCP: Base %d, Template '%s'"), Mcp23x.base, val.getStr());
   }
   JsonParserArray arr = root[PSTR(D_JSON_GPIO)];
   if (arr) {
@@ -602,11 +608,23 @@ void MCP23xModuleInit(void) {
       pinMode(Mcp23x.device[Mcp23x.chip].pin_cs, OUTPUT);
       Mcp23x.device[Mcp23x.chip].interface = MCP23X_SPI;
       Mcp23x.device[Mcp23x.chip].address = MCP23XXX_ADDR_START << 1;
-      AddLog(LOG_LEVEL_INFO, PSTR("SPI: MCP23S17 found at CS%d"), Mcp23x.chip +1);
-      Mcp23x.device[Mcp23x.chip].pins = 16;
-      MCP23xWrite(MCP23X17_IOCONA, 0b01011000);    // Enable INT mirror, Slew rate disabled, HAEN pins for addressing
-      Mcp23x.device[Mcp23x.chip].olata = MCP23xRead(MCP23X17_OLATA);
-      Mcp23x.device[Mcp23x.chip].olatb = MCP23xRead(MCP23X17_OLATB);
+
+      MCP23xWrite(MCP23X08_IOCON, 0x80);               // Attempt to set bank mode - this will only work on MCP23x17, so its the best way to detect the different chips 23x08 vs 23x17
+      uint8_t buffer;
+      if (MCP23xValidRead(MCP23X08_IOCON, &buffer)) {
+        if (0x00 == buffer) { // MCP23S08
+          AddLog(LOG_LEVEL_INFO, PSTR("SPI: MCP23S08 found at CS%d"), Mcp23x.chip +1);
+          Mcp23x.device[Mcp23x.chip].pins = 8;
+          MCP23xWrite(MCP23X08_IOCON, 0b00011000);    // Enable INT mirror, Slew rate disabled, HAEN pins for addressing
+          Mcp23x.device[Mcp23x.chip].olata = MCP23xRead(MCP23X08_OLAT);
+        } else if (0x80 == buffer) { // MCP23S17
+          AddLog(LOG_LEVEL_INFO, PSTR("SPI: MCP23S17 found at CS%d"), Mcp23x.chip +1);
+          Mcp23x.device[Mcp23x.chip].pins = 16;
+          MCP23xWrite(MCP23X17_IOCONA, 0b01011000);    // Enable INT mirror, Slew rate disabled, HAEN pins for addressing
+          Mcp23x.device[Mcp23x.chip].olata = MCP23xRead(MCP23X17_OLATA);
+          Mcp23x.device[Mcp23x.chip].olatb = MCP23xRead(MCP23X17_OLATB);
+        }
+      }
       Mcp23x.max_devices++;
 
       Mcp23x.max_pins += Mcp23x.device[Mcp23x.chip].pins;
@@ -624,7 +642,7 @@ void MCP23xModuleInit(void) {
         Mcp23x.device[Mcp23x.chip].interface = MCP23X_I2C;
         Mcp23x.device[Mcp23x.chip].address = mcp23xxx_address;
 
-        MCP23xWrite(MCP23X08_IOCON, 0x80);               // Attempt to set bank mode - this will only work on MCP23017, so its the best way to detect the different chips 23008 vs 23017
+        MCP23xWrite(MCP23X08_IOCON, 0x80);               // Attempt to set bank mode - this will only work on MCP23x17, so its the best way to detect the different chips 23x08 vs 23x17
         uint8_t buffer;
         if (MCP23xValidRead(MCP23X08_IOCON, &buffer)) {
           if (0x00 == buffer) {
@@ -684,7 +702,7 @@ void MCP23xServiceInput(void) {
   uint32_t gpio;
   for (Mcp23x.chip = 0; Mcp23x.chip < Mcp23x.max_devices; Mcp23x.chip++) {
     if (8 == Mcp23x.device[Mcp23x.chip].pins) {
-      gpio = MCP23xRead(MCP23X08_GPIO);                // Read MCP23008 gpio
+      gpio = MCP23xRead(MCP23X08_GPIO);                // Read MCP23x08 gpio
     } else {
       gpio = MCP23xRead16(MCP23X17_GPIOA);             // Read MCP23x17 gpio
     }
@@ -719,7 +737,7 @@ void MCP23xInit(void) {
     for (Mcp23x.chip = 0; Mcp23x.chip < Mcp23x.max_devices; Mcp23x.chip++) {
       if (Mcp23x.device[Mcp23x.chip].pin_int > -1) {
         if (8 == Mcp23x.device[Mcp23x.chip].pins) {
-          gpio = MCP23xRead(MCP23X08_GPIO);            // Clear MCP23008 interrupt
+          gpio = MCP23xRead(MCP23X08_GPIO);            // Clear MCP23x08 interrupt
         } else {
           gpio = MCP23xRead16(MCP23X17_GPIOA);         // Clear MCP23x17 interrupt
         }
@@ -731,14 +749,19 @@ void MCP23xInit(void) {
 }
 
 void MCP23xPower(void) {
-  power_t rpower = XdrvMailbox.index >> Mcp23x.relay_offset;
-  for (uint32_t index = 0; index < Mcp23x.relay_max; index++) {
+  // XdrvMailbox.index = 32-bit rpower bit mask
+  // Use absolute relay indexes unique with main template
+  power_t rpower = XdrvMailbox.index;
+  uint32_t relay_max = TasmotaGlobal.devices_present;
+  if (!Mcp23x.base) {
+    // Use relative and sequential relay indexes
+    rpower >>= Mcp23x.relay_offset;
+    relay_max = Mcp23x.relay_max;
+  }
+  for (uint32_t index = 0; index < relay_max; index++) {
     power_t state = rpower &1;
     if (MCP23xPinUsed(GPIO_REL1, index)) {
       uint32_t pin = MCP23xPin(GPIO_REL1, index) & 0x3F;   // Fix possible overflow over 63 gpios
-
-//      AddLog(LOG_LEVEL_DEBUG, PSTR("MCP: Power pin %d, state %d(%d)"), pin, state, bitRead(Mcp23x.relay_inverted, index));
-
       MCP23xDigitalWrite(pin, bitRead(Mcp23x.relay_inverted, index) ? !state : state);
     }
     rpower >>= 1;                                      // Select next power
@@ -747,21 +770,34 @@ void MCP23xPower(void) {
 
 bool MCP23xAddButton(void) {
   // XdrvMailbox.index = button/switch index
-  if (Mcp23x.button_offset < 0) { Mcp23x.button_offset = XdrvMailbox.index; }
-  uint32_t index = XdrvMailbox.index - Mcp23x.button_offset;
-  if (index >= Mcp23x.button_max) { return false; }
+  uint32_t index = XdrvMailbox.index;
+  if (!Mcp23x.base) {
+    // Use relative and sequential button indexes
+    if (Mcp23x.button_offset < 0) { Mcp23x.button_offset = index; }
+    index -= Mcp23x.button_offset;
+    if (index >= Mcp23x.button_max) { return false; }
+  } else {
+    // Use absolute button indexes unique with main template
+    if (!MCP23xPinUsed(GPIO_KEY1, index)) { return false; }
+    Mcp23x.button_offset = 0;
+  }
   XdrvMailbox.index = (MCP23xDigitalRead(MCP23xPin(GPIO_KEY1, index)) != bitRead(Mcp23x.button_inverted, index));
-
-//  AddLog(LOG_LEVEL_DEBUG, PSTR("MCP: AddButton index %d, state %d"), index, XdrvMailbox.index);
-
   return true;
 }
 
 bool MCP23xAddSwitch(void) {
   // XdrvMailbox.index = button/switch index
-  if (Mcp23x.switch_offset < 0) { Mcp23x.switch_offset = XdrvMailbox.index; }
-  uint32_t index = XdrvMailbox.index - Mcp23x.switch_offset;
-  if (index >= Mcp23x.switch_max) { return false; }
+  uint32_t index = XdrvMailbox.index;
+  if (!Mcp23x.base) {
+    // Use relative and sequential switch indexes
+    if (Mcp23x.switch_offset < 0) { Mcp23x.switch_offset = index; }
+    index -= Mcp23x.switch_offset;
+    if (index >= Mcp23x.switch_max) { return false; }
+  } else {
+    // Use absolute switch indexes unique with main template
+    if (!MCP23xPinUsed(GPIO_SWT1, index)) { return false; }
+    Mcp23x.switch_offset = 0;
+  }
   XdrvMailbox.index = MCP23xDigitalRead(MCP23xPin(GPIO_SWT1, index));
   return true;
 }
@@ -783,7 +819,7 @@ bool Xdrv67(uint32_t function) {
 
   bool result = false;
 
-  if (FUNC_MODULE_INIT == function) {
+  if (FUNC_SETUP_RING2 == function) {
     MCP23xModuleInit();
   } else if (Mcp23x.max_devices) {
     switch (function) {
@@ -809,6 +845,9 @@ bool Xdrv67(uint32_t function) {
         break;
       case FUNC_ADD_SWITCH:
         result = MCP23xAddSwitch();
+        break;
+      case FUNC_ACTIVE:
+        result = true;
         break;
     }
   }
