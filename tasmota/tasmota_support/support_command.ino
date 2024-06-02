@@ -17,6 +17,8 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <esp_sleep.h>
+
 const char kTasmotaCommands[] PROGMEM = "|"  // No prefix
   // SetOptions synonyms
   D_SO_WIFINOSLEEP "|"
@@ -1124,6 +1126,18 @@ void CmndRestart(void)
     }
     break;
 #endif  // ESP32
+  case 8:
+    TasmotaGlobal.restart_flag = 2;
+    TasmotaGlobal.restart_lightsleep = true;
+    ResponseCmndChar(PSTR("Go to lightsleep"));
+    break;
+  /*
+  case 9:
+    TasmotaGlobal.restart_flag = 2;
+    TasmotaGlobal.restart_deepsleep = true;
+    ResponseCmndChar(PSTR("Go to deepsleep"));
+    break;
+    * */
   case -1:
     CmndCrash();    // force a crash
     break;

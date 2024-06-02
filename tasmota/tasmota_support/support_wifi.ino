@@ -1092,7 +1092,7 @@ void EspRestart(void)
   WifiShutdown(true);
   CrashDumpClear();           // Clear the stack dump in RTC
 
-  if (TasmotaGlobal.restart_halt) {
+  if (TasmotaGlobal.restart_halt) { // Restart 2
     while (1) {
       OsWatchLoop();          // Feed OsWatch timer to prevent restart
       SetLedLink(1);          // Wifi led on
@@ -1100,6 +1100,13 @@ void EspRestart(void)
       SetLedLink(0);          // Wifi led off
       delay(800);             // Satisfy SDK
     }
+  } else if (TasmotaGlobal.restart_lightsleep) {  // Restart 8
+	// https://docs.espressif.com/projects/esp-idf/en/stable/esp32s2/api-reference/system/sleep_modes.html
+	// https://chatgpt.com/c/2650d8c7-8309-4da6-bcc9-e84275ba1822
+    //ResponseCmndChar(PSTR("Go to lightsleep 2"));
+    AddLog(LOG_LEVEL_DEBUG_MORE, PSTR(D_LOG_WIFI "Go to lightsleep 2"));
+    esp_sleep_enable_uart_wakeup(0);  // UART0 is typically used for the serial interface
+    esp_light_sleep_start();
   } else {
     ESP_Restart();
   }
